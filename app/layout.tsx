@@ -5,6 +5,10 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "TextShare — 安全分享文本",
   description: "支持密码、到期时间与查看次数限制的简洁分享工具",
+  // 直接引用 public 目录下的图片
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
