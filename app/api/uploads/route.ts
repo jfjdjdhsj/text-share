@@ -1,4 +1,5 @@
 export const runtime = "nodejs";
+export const preferredRegion = ["iad1"];
 
 import { NextRequest, NextResponse } from "next/server";
 import { uploadToBlob } from "@/src/lib/blob";
@@ -21,33 +22,31 @@ export async function POST(req: NextRequest) {
     if (total > MAX_TOTAL)
       return NextResponse.json({ message: "总大小不能超过 50MB" }, { status: 400 });
 
-    const now = Date.now();
-    const expiresAt = new Date(now + 24 * 60 * 60 * 1000); // 24h
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
-    const results: { id: string; filename: string; url: string; size: number }[] = [];
+    // ✅ 并发上传 + 并发入库
+    const results = await Promise.all(
+      files.map(async (f) => {
+        const ab = await f.arrayBuffer();
+        const buf = Buffer.from(ab);
+        const safeName = (f.name || "file").replace(/[^\w.\-]/g, "_");
+        const key = `uploads/${Date.now()}-${Math.random().toString(36).slice(2)}-${safeName}`;
+        const putRes = await uploadToBlob(key, buf, f.type || "application/octet-stream");
 
-    for (const f of files) {
-      const ab = await f.arrayBuffer();
-      const buf = Buffer.from(ab);
-
-      const safeName = (f.name || "file").replace(/[^\w.\-]/g, "_");
-      const key = `uploads/${Date.now()}-${Math.random().toString(36).slice(2)}-${safeName}`;
-
-      const putRes = await uploadToBlob(key, buf, f.type || "application/octet-stream");
-
-      const rec = await prisma.upload.create({
-        data: {
-          filename: f.name || "file",
-          url: putRes.url,
-          blobPath: putRes.pathname,
-          size: buf.length,              // ← 这里改成使用本地 Buffer 的长度
-          mime: f.type || null,
-          expiresAt,
-        },
-        select: { id: true, filename: true, url: true, size: true },
-      });
-      results.push(rec);
-    }
+        const rec = await prisma.upload.create({
+          data: {
+            filename: f.name || "file",
+            url: putRes.url,
+            blobPath: putRes.pathname,
+            size: buf.length,
+            mime: f.type || null,
+            expiresAt,
+          },
+          select: { id: true, filename: true, url: true, size: true },
+        });
+        return rec;
+      })
+    );
 
     return NextResponse.json({ uploads: results }, { status: 201 });
   } catch (err: any) {
