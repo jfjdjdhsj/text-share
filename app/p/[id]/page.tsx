@@ -45,7 +45,8 @@ export default function PastePage({ params }: { params: { id: string } }) {
     setError(null);
     try {
       const res = await fetch(`/api/pastes/${id}/unlock`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: pw }),
       });
       const data = await res.json();
@@ -69,6 +70,7 @@ export default function PastePage({ params }: { params: { id: string } }) {
           <div className="text-sm text-slate-500">
             {meta.remainingViews === null ? "不限制查看次数" : `剩余可查看：${meta.remainingViews} 次`}
           </div>
+
           {content.trim().length > 0 && (
             <pre className="whitespace-pre-wrap break-words bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
               {content}
@@ -78,13 +80,22 @@ export default function PastePage({ params }: { params: { id: string } }) {
           {files.length > 0 && (
             <div className="space-y-2">
               <div className="label">附件（{files.length}）</div>
-              <ul className="list-disc pl-5">
-                {files.map(f => (
-                  <li key={f.id} className="break-all">
-                    <a className="underline" href={f.url} target="_blank" rel="noreferrer">
+              <ul className="pl-0 space-y-2">
+                {files.map((f) => (
+                  <li key={f.id} className="flex items-center gap-3 flex-wrap">
+                    {/* 名称：点击预览（新窗口打开） */}
+                    <a className="underline break-all" href={f.url} target="_blank" rel="noreferrer">
                       {f.filename}
-                    </a>{" "}
+                    </a>
                     <span className="text-xs text-slate-500">({formatSize(f.size)})</span>
+
+                    {/* 下载：通过我们自己的下载端点，触发浏览器下载并带上文件名 */}
+                    <a
+                      className="text-xs px-2 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      href={`/api/uploads/${f.id}/download`}
+                    >
+                      下载
+                    </a>
                   </li>
                 ))}
               </ul>
@@ -95,13 +106,21 @@ export default function PastePage({ params }: { params: { id: string } }) {
       ) : meta.requiresPassword ? (
         <div className="space-y-3">
           <div className="label">该分享已设置访问密码</div>
-          <input type="password" className="input" placeholder="输入密码" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <input
+            type="password"
+            className="input"
+            placeholder="输入密码"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+          />
           <button className="btn-primary" onClick={unlock} disabled={loading}>
             {loading ? "验证中…" : "解锁查看"}
           </button>
           {error && <div className="text-sm text-red-500">{error}</div>}
         </div>
-      ) : (<div>读取中…</div>)}
+      ) : (
+        <div>读取中…</div>
+      )}
     </main>
   );
 }
