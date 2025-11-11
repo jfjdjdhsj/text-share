@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import clsx from "clsx";
 import { QRCodeSVG } from "qrcode.react";
@@ -8,21 +8,23 @@ import { QRCodeSVG } from "qrcode.react";
 const MAX_FILES = 10;
 const MAX_TOTAL = 50 * 1024 * 1024;
 
-const schema = z.object({
-  // 这里不再强制 content >= 1；用后面的 refine 做“文本或文件至少一个”
-  content: z.string().default(""),
-  enablePassword: z.boolean(),
-  password: z.string().optional(),
-  enableExpiry: z.boolean(),
-  expiryMinutes: z.number().int().positive().optional(),
-  enableMaxViews: z.boolean(),
-  maxViews: z.number().int().positive().optional(),
-  burnOnce: z.boolean(),
-  fileIds: z.array(z.string()).max(10).optional()
-}).refine((d) => (d.content?.trim()?.length ?? 0) > 0 || (d.fileIds?.length ?? 0) > 0, {
-  message: "请填写文本或选择至少一个文件",
-  path: ["content"]
-});
+const schema = z
+  .object({
+    content: z.string().default(""),
+    enablePassword: z.boolean(),
+    password: z.string().optional(),
+    enableExpiry: z.boolean(),
+    expiryMinutes: z.number().int().positive().optional(),
+    enableMaxViews: z.boolean(),
+    maxViews: z.number().int().positive().optional(),
+    burnOnce: z.boolean(),
+    fileIds: z.array(z.string()).max(10).optional(),
+  })
+  .refine(
+    (d) =>
+      (d.content?.trim()?.length ?? 0) > 0 || (d.fileIds?.length ?? 0) > 0,
+    { message: "请填写文本或选择至少一个文件", path: ["content"] }
+  );
 
 function formatSize(n: number) {
   if (n < 1024) return `${n} B`;
@@ -31,6 +33,8 @@ function formatSize(n: number) {
 }
 
 export default function HomePage() {
+  const formRef = useRef<HTMLFormElement>(null); // ← 用 ref 持有表单元素
+
   const [link, setLink] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -76,7 +80,15 @@ export default function HomePage() {
     setLoading(true);
     setLink(null);
 
-    const form = new FormData(e.currentTarget);
+    // ⚠️ 千万不要在 await 后再用 e.currentTarget；改用 ref
+    const el = formRef.current;
+    if (!el) {
+      setErr("表单未就绪，请刷新后重试");
+      setLoading(false);
+      return;
+    }
+
+    const form = new FormData(el);
     const enablePassword = form.get("enablePassword") === "on";
     const enableExpiry = form.get("enableExpiry") === "on";
     const enableMaxViews = form.get("enableMaxViews") === "on";
@@ -89,8 +101,14 @@ export default function HomePage() {
       return;
     }
 
-    const expiryMinutes = enableExpiry ? Number(form.get("expiryMinutes") || 0) || undefined : undefined;
-    const maxViews = burnOnce ? 1 : enableMaxViews ? Number(form.get("maxViews") || 0) || undefined : undefined;
+    const expiryMinutes = enableExpiry
+      ? Number(form.get("expiryMinutes") || 0) || undefined
+      : undefined;
+    const maxViews = burnOnce
+      ? 1
+      : enableMaxViews
+      ? Number(form.get("maxViews") || 0) || undefined
+      : undefined;
 
     try {
       const fileIds = await uploadFiles();
@@ -104,7 +122,7 @@ export default function HomePage() {
         enableMaxViews: burnOnce ? true : enableMaxViews,
         maxViews,
         burnOnce,
-        fileIds
+        fileIds,
       };
 
       const parsed = schema.safeParse(payload);
@@ -116,14 +134,18 @@ export default function HomePage() {
       const res = await fetch("/api/pastes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed.data)
+        body: JSON.stringify(parsed.data),
       });
 
       if (!res.ok) {
         let message = "创建失败";
         try {
           const text = await res.text();
-          try { message = JSON.parse(text)?.message || message; } catch { message = text || message; }
+          try {
+            message = JSON.parse(text)?.message || message;
+          } catch {
+            message = text || message;
+          }
         } catch {}
         throw new Error(message);
       }
@@ -131,8 +153,8 @@ export default function HomePage() {
       const { id } = await res.json();
       const url = `${location.origin}/p/${id}`;
       setLink(url);
-      setFiles([]); // 清空已选择文件
-      (e.currentTarget as HTMLFormElement).reset(); // 清表单
+      setFiles([]);          // 清空文件
+      el.reset();            // ✅ 用 ref 安全 reset，不再读取 e.currentTarget
     } catch (e: any) {
       setErr(e?.message || "创建失败");
     } finally {
@@ -144,16 +166,26 @@ export default function HomePage() {
 
   return (
     <main className="card p-6 space-y-4">
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-4">
         <div>
           <label className="label">要分享的文本（可留空仅分享文件）</label>
-          <textarea name="content" rows={8} className="textarea" placeholder="在这里粘贴文本…" />
+          <textarea
+            name="content"
+            rows={8}
+            className="textarea"
+            placeholder="在这里粘贴文本…"
+          />
         </div>
 
         {/* 文件上传 */}
         <div className="space-y-2">
           <label className="label">上传文件（最多 10 个，总计 ≤ 50MB；可仅分享文件）</label>
-          <input type="file" multiple onChange={(e) => onPickFiles(e.currentTarget.files)} className="block" />
+          <input
+            type="file"
+            multiple
+            onChange={(e) => onPickFiles(e.currentTarget.files)}
+            className="block"
+          />
           <div className="note">
             已选 {files.length} 个文件，合计 {formatSize(totalSize)}
           </div>
@@ -162,7 +194,9 @@ export default function HomePage() {
               {files.map((f, i) => (
                 <li key={i} className="break-all flex items-center gap-2">
                   <span>{f.name}</span>
-                  <span className="text-xs text-slate-500">（{formatSize(f.size)}）</span>
+                  <span className="text-xs text-slate-500">
+                    （{formatSize(f.size)}）
+                  </span>
                   <button
                     type="button"
                     className="ml-2 text-xs underline text-red-600 hover:opacity-80"
@@ -183,8 +217,15 @@ export default function HomePage() {
               <input type="checkbox" name="enablePassword" className="h-4 w-4" />
               启用密码
             </label>
-            <input name="password" type="password" className="input" placeholder="设置访问密码（可选）" />
-            <p className="note">密码将使用 <code>scrypt</code> 强哈希，服务器仅保存哈希值。</p>
+            <input
+              name="password"
+              type="password"
+              className="input"
+              placeholder="设置访问密码（可选）"
+            />
+            <p className="note">
+              密码将使用 <code>scrypt</code> 强哈希，服务器仅保存哈希值。
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -192,18 +233,36 @@ export default function HomePage() {
               <input type="checkbox" name="enableExpiry" className="h-4 w-4" />
               启用时间限制
             </label>
-            <input name="expiryMinutes" type="number" min={1} className="input" placeholder="有效分钟数（例如 60）" />
-            <p className="note">到期后链接立刻失效。</p>
+            <input
+              name="expiryMinutes"
+              type="number"
+              min={1}
+              className="input"
+              placeholder="有效分钟数（例如 60）"
+            />
+            <p className="note">
+              不设置则文本默认 7 天到期；附件会在上传后 24 小时自动清理。
+            </p>
           </div>
         </div>
 
         <div className="row">
           <div className="space-y-2">
             <label className="label flex items-center gap-2">
-              <input type="checkbox" name="enableMaxViews" className="h-4 w-4" />
+              <input
+                type="checkbox"
+                name="enableMaxViews"
+                className="h-4 w-4"
+              />
               启用查看次数限制
             </label>
-            <input name="maxViews" type="number" min={1} className="input" placeholder="允许查看次数（例如 3）" />
+            <input
+              name="maxViews"
+              type="number"
+              min={1}
+              className="input"
+              placeholder="允许查看次数（例如 3）"
+            />
             <p className="note">达到次数后自动失效；不勾选则不限制。</p>
           </div>
 
@@ -225,19 +284,33 @@ export default function HomePage() {
 
         {link && (
           <div className="mt-4 p-4 rounded-xl bg-slate-100 dark:bg-slate-800 space-y-3">
-            <div className="text-sm text-slate-600 dark:text-slate-300">分享链接：</div>
+            <div className="text-sm text-slate-600 dark:text-slate-300">
+              分享链接：
+            </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <a className="font-mono break-all underline" href={link} target="_blank" rel="noreferrer">{link}</a>
+              <a
+                className="font-mono break-all underline"
+                href={link}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {link}
+              </a>
               <button
                 type="button"
                 className="btn-primary"
                 onClick={async () => {
-                  try { await navigator.clipboard.writeText(link); setCopied(true); }
-                  catch {
+                  try {
+                    await navigator.clipboard.writeText(link);
+                    setCopied(true);
+                  } catch {
                     const input = document.createElement("input");
-                    input.value = link; document.body.appendChild(input);
-                    input.select(); document.execCommand("copy");
-                    document.body.removeChild(input); setCopied(true);
+                    input.value = link;
+                    document.body.appendChild(input);
+                    input.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(input);
+                    setCopied(true);
                   }
                 }}
               >
