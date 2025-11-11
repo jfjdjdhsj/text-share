@@ -12,24 +12,20 @@ const bodySchema = z.object({
   enableMaxViews: z.boolean(),
   maxViews: z.number().int().positive().optional(),
   burnOnce: z.boolean().optional(),
+  fileIds: z.array(z.string()).max(10).optional()
 });
 
 export async function POST(req: NextRequest) {
   try {
     const json = await req.json();
     const parsed = bodySchema.safeParse(json);
-    if (!parsed.success) {
-      return NextResponse.json({ message: "参数不合法" }, { status: 400 });
-    }
+    if (!parsed.success) return NextResponse.json({ message: "参数不合法" }, { status: 400 });
 
     const {
-      content,
-      enablePassword,
-      password,
-      enableExpiry,
-      expiryMinutes,
-      enableMaxViews,
-      maxViews,
+      content, enablePassword, password,
+      enableExpiry, expiryMinutes,
+      enableMaxViews, maxViews,
+      fileIds, burnOnce
     } = parsed.data;
 
     let pwSalt: string | undefined;
@@ -47,32 +43,28 @@ export async function POST(req: NextRequest) {
     }
 
     const expiresAt =
-      enableExpiry && expiryMinutes
-        ? new Date(Date.now() + expiryMinutes * 60 * 1000)
-        : null;
-
-    const maxViewsFinal = enableMaxViews && maxViews ? maxViews : null;
+      enableExpiry && expiryMinutes ? new Date(Date.now() + expiryMinutes * 60 * 1000) : null;
+    const maxViewsFinal = burnOnce ? 1 : (enableMaxViews && maxViews ? maxViews : null);
 
     const rec = await prisma.paste.create({
       data: {
-        content,
-        pwSalt,
-        pwHash,
-        pwParams,
+        content, pwSalt, pwHash, pwParams,
         expiresAt: expiresAt ?? undefined,
-        maxViews: maxViewsFinal ?? undefined,
+        maxViews: maxViewsFinal ?? undefined
       },
-      select: { id: true },
+      select: { id: true }
     });
+
+    if (fileIds?.length) {
+      await prisma.upload.updateMany({
+        where: { id: { in: fileIds } },
+        data: { pasteId: rec.id }
+      });
+    }
 
     return NextResponse.json({ id: rec.id }, { status: 201 });
   } catch (err: any) {
-    // 把真实错误打到函数日志里（Vercel → Functions 可见）
     console.error("[/api/pastes] CreateError:", err);
-    const msg =
-      err?.code === "P2021"
-        ? "数据库表不存在（请确保构建阶段已执行 prisma db push）"
-        : err?.message || "服务器错误";
-    return NextResponse.json({ message: msg }, { status: 500 });
+    return NextResponse.json({ message: err?.message || "服务器错误" }, { status: 500 });
   }
 }
