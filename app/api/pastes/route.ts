@@ -11,55 +11,68 @@ const bodySchema = z.object({
   expiryMinutes: z.number().int().positive().optional(),
   enableMaxViews: z.boolean(),
   maxViews: z.number().int().positive().optional(),
+  burnOnce: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest) {
-  const json = await req.json();
-  const parsed = bodySchema.safeParse(json);
-  if (!parsed.success) return NextResponse.json({ message: "参数不合法" }, { status: 400 });
-
-  const {
-    content,
-    enablePassword,
-    password,
-    enableExpiry,
-    expiryMinutes,
-    enableMaxViews,
-    maxViews,
-  } = parsed.data;
-
-  let pwSalt: string | undefined;
-  let pwHash: string | undefined;
-  let pwParams: string | undefined;
-
-  if (enablePassword) {
-    if (!password || password.length < 4) {
-      return NextResponse.json({ message: "密码至少 4 位" }, { status: 400 });
+  try {
+    const json = await req.json();
+    const parsed = bodySchema.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json({ message: "参数不合法" }, { status: 400 });
     }
-    const hashed = await hashPassword(password);
-    pwSalt = hashed.saltB64;
-    pwHash = hashed.hashB64;
-    pwParams = JSON.stringify(hashed.params);
-  }
 
-  const expiresAt =
-    enableExpiry && expiryMinutes
-      ? new Date(Date.now() + expiryMinutes * 60 * 1000)
-      : null;
-
-  const maxViewsFinal = enableMaxViews && json.maxViews ? json.maxViews : null;
-
-  const rec = await prisma.paste.create({
-    data: {
+    const {
       content,
-      pwSalt,
-      pwHash,
-      pwParams,
-      expiresAt: expiresAt ?? undefined,
-      maxViews: maxViewsFinal ?? undefined,
-    },
-    select: { id: true },
-  });
+      enablePassword,
+      password,
+      enableExpiry,
+      expiryMinutes,
+      enableMaxViews,
+      maxViews,
+    } = parsed.data;
 
-  return NextResponse.json({ id: rec.id }, { status: 201 });
+    let pwSalt: string | undefined;
+    let pwHash: string | undefined;
+    let pwParams: string | undefined;
+
+    if (enablePassword) {
+      if (!password || password.length < 4) {
+        return NextResponse.json({ message: "密码至少 4 位" }, { status: 400 });
+      }
+      const hashed = await hashPassword(password);
+      pwSalt = hashed.saltB64;
+      pwHash = hashed.hashB64;
+      pwParams = JSON.stringify(hashed.params);
+    }
+
+    const expiresAt =
+      enableExpiry && expiryMinutes
+        ? new Date(Date.now() + expiryMinutes * 60 * 1000)
+        : null;
+
+    const maxViewsFinal = enableMaxViews && maxViews ? maxViews : null;
+
+    const rec = await prisma.paste.create({
+      data: {
+        content,
+        pwSalt,
+        pwHash,
+        pwParams,
+        expiresAt: expiresAt ?? undefined,
+        maxViews: maxViewsFinal ?? undefined,
+      },
+      select: { id: true },
+    });
+
+    return NextResponse.json({ id: rec.id }, { status: 201 });
+  } catch (err: any) {
+    // 把真实错误打到函数日志里（Vercel → Functions 可见）
+    console.error("[/api/pastes] CreateError:", err);
+    const msg =
+      err?.code === "P2021"
+        ? "数据库表不存在（请确保构建阶段已执行 prisma db push）"
+        : err?.message || "服务器错误";
+    return NextResponse.json({ message: msg }, { status: 500 });
+  }
 }
