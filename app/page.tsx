@@ -133,11 +133,12 @@ export default function HomePage() {
     const burnOnce = form.get("burnOnce") === "on";
     const password = enablePassword ? String(form.get("password") || "") : "";
 
-    if (enablePassword && password.length < 0) {
-      setErr("密码至少 4 位");
-      setLoading(false);
-      return;
-    }
+    // Removed the password length check here:
+    // if (enablePassword && password.length < 4) {
+    //   setErr("密码至少 4 位");
+    //   setLoading(false);
+    //   return;
+    // }
 
     const expiryMinutes = enableExpiry
       ? Number(form.get("expiryMinutes") || 0) || undefined
