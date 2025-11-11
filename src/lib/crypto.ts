@@ -2,7 +2,8 @@ import crypto from "crypto";
 
 export type ScryptParams = { N: number; r: number; p: number; keylen: number };
 
-const defaultParams: ScryptParams = { N: 2 ** 15, r: 8, p: 1, keylen: 32 }; // 比 bcrypt 成本更高，抗 GPU 更好
+// 原本 N=2**15 太大，这里改成 2**13（省 4 倍内存）
+const defaultParams: ScryptParams = { N: 2 ** 13, r: 8, p: 1, keylen: 32 };
 
 export async function hashPassword(plain: string, params: ScryptParams = defaultParams) {
   const salt = crypto.randomBytes(16);
@@ -14,7 +15,12 @@ export async function hashPassword(plain: string, params: ScryptParams = default
   };
 }
 
-export async function verifyPassword(plain: string, saltB64: string, hashB64: string, paramsJson: string) {
+export async function verifyPassword(
+  plain: string,
+  saltB64: string,
+  hashB64: string,
+  paramsJson: string
+) {
   const params: ScryptParams = JSON.parse(paramsJson);
   const salt = Buffer.from(saltB64, "base64");
   const derived = await scryptAsync(plain, salt, params);
