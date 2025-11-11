@@ -14,8 +14,26 @@ model Paste {
   expiresAt    DateTime?
   maxViews     Int?
   views        Int      @default(0)
-  // 密码采用 scrypt，存储参数、salt 和派生密钥
   pwSalt       String?
   pwHash       String?
-  pwParams     String?  // JSON: {N,r,p,keylen}
+  pwParams     String?
+
+  // 关联的文件
+  uploads      Upload[]
+}
+
+model Upload {
+  id        String   @id @default(cuid())
+  filename  String
+  url       String
+  blobPath  String    // vercel blob 的 pathname，用于删除
+  size      Int
+  mime      String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime  // 固定创建时 +24h
+
+  pasteId   String?
+  paste     Paste?    @relation(fields: [pasteId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
 }
