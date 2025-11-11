@@ -6,9 +6,9 @@ import { uploadToBlob } from "@/src/lib/blob";
 import { prisma } from "@/src/lib/db";
 
 const MAX_FILES = 10;
-const MAX_TOTAL = 10 * 1024 * 1024; // ✅ 总计 10MB
+const MAX_TOTAL = 10 * 1024 * 1024; // 10MB
 
-// 仅允许的文本类扩展名（全部小写）
+// 允许的文本扩展名（小写）
 const ALLOWED_EXT = new Set([
   "txt","md","markdown","csv","tsv","json","jsonl","log","xml",
   "yaml","yml","ini","conf","cfg","properties","env",
@@ -23,7 +23,6 @@ function isTextLike(filename: string, mime?: string | null) {
   const lower = (mime || "").toLowerCase();
   if (lower.startsWith("text/")) return true;
   if (lower === "application/json" || lower === "application/xml") return true;
-  // 某些设备会给空或 application/octet-stream，退回用扩展名判断
   const m = filename.toLowerCase().match(/\.([a-z0-9]+)$/i);
   const ext = m ? m[1] : "";
   return ALLOWED_EXT.has(ext);
@@ -38,11 +37,11 @@ export async function POST(req: NextRequest) {
     if (files.length > MAX_FILES)
       return NextResponse.json({ message: `最多上传 ${MAX_FILES} 个文件` }, { status: 400 });
 
-    // 类型与大小校验
+    // 类型 + 总大小校验
     let total = 0;
     for (const f of files) {
       if (!isTextLike(f.name || "", (f as any).type)) {
-        return NextResponse.json({ message: `仅支持文本文件，已拒绝：${f.name}` }, { status: 415 });
+        return NextResponse.json({ message: "仅支持文本文件" }, { status: 415 });
       }
       total += f.size || 0;
     }
