@@ -1,0 +1,21 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Paste {
+  id           String   @id @default(cuid())
+  content      String
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime?
+  maxViews     Int?
+  views        Int      @default(0)
+  // 密码采用 scrypt，存储参数、salt 和派生密钥
+  pwSalt       String?
+  pwHash       String?
+  pwParams     String?  // JSON: {N,r,p,keylen}
+}
