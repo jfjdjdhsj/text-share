@@ -32,7 +32,7 @@ function formatSize(n: number) {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
-// 与后端保持一致的文本类型判断
+// 与后端一致的“文本文件”判断辅助
 const ALLOWED_EXT = new Set([
   "txt","md","markdown","csv","tsv","json","jsonl","log","xml",
   "yaml","yml","ini","conf","cfg","properties","env",
@@ -56,20 +56,11 @@ export default function HomePage() {
 
   const [link, setLink] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  // 不再在页面内展示 err，用 toast 代替
-  const [, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const [files, setFiles] = useState<File[]>([]);
   const totalSize = files.reduce((s, f) => s + (f.size || 0), 0);
-
-  // Toast（右上角提示，5 秒自动消失）
-  const [toast, setToast] = useState<{ msg: string; type?: "error" | "success" } | null>(null);
-  function showToast(msg: string, type: "error" | "success" = "error") {
-    setToast({ msg, type });
-    window.clearTimeout((showToast as any)._t);
-    (showToast as any)._t = window.setTimeout(() => setToast(null), 5000);
-  }
 
   useEffect(() => {
     if (!copied) return;
@@ -80,22 +71,22 @@ export default function HomePage() {
   function onPickFiles(flist: FileList | null) {
     if (!flist) return;
     const picked = Array.from(flist);
+
+    // 预检：仅文本文件
     for (const f of picked) {
       if (!isTextLike(f.name, (f as any).type)) {
-        setErr(`仅支持文本文件，已拒绝：${f.name}`);
-        showToast(`仅支持文本文件，已拒绝：${f.name}`);
+        setErr("仅支持文本文件");
         return;
       }
     }
+
     const merged = [...files, ...picked].slice(0, MAX_FILES);
     const size = merged.reduce((s, f) => s + (f.size || 0), 0);
     if (size > MAX_TOTAL) {
       setErr("文件总大小不能超过 10MB");
-      showToast("文件总大小不能超过 10MB");
       return;
     }
     setErr(null);
-    setToast(null);
     setFiles(merged);
   }
 
@@ -109,7 +100,7 @@ export default function HomePage() {
     if (totalSize > MAX_TOTAL) throw new Error("文件总大小不能超过 10MB");
     for (const f of files) {
       if (!isTextLike(f.name, (f as any).type)) {
-        throw new Error(`仅支持文本文件，已拒绝：${f.name}`);
+        throw new Error("仅支持文本文件");
       }
     }
 
@@ -125,15 +116,12 @@ export default function HomePage() {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr(null);
-    setToast(null);
     setLoading(true);
     setLink(null);
 
     const el = formRef.current;
     if (!el) {
-      const m = "表单未就绪，请刷新后重试";
-      setErr(m);
-      showToast(m);
+      setErr("表单未就绪，请刷新后重试");
       setLoading(false);
       return;
     }
@@ -146,9 +134,7 @@ export default function HomePage() {
     const password = enablePassword ? String(form.get("password") || "") : "";
 
     if (enablePassword && password.length < 4) {
-      const m = "密码至少 4 位";
-      setErr(m);
-      showToast(m);
+      setErr("密码至少 4 位");
       setLoading(false);
       return;
     }
@@ -180,8 +166,7 @@ export default function HomePage() {
       const parsed = schema.safeParse(payload);
       if (!parsed.success) {
         const first = parsed.error.issues[0];
-        const m = first?.message || "请填写文本或选择至少一个文件";
-        throw new Error(m);
+        throw new Error(first?.message || "请填写文本或选择至少一个文件");
       }
 
       const res = await fetch("/api/pastes", {
@@ -208,11 +193,8 @@ export default function HomePage() {
       setLink(url);
       setFiles([]);
       el.reset();
-      showToast("创建成功", "success");
     } catch (e: any) {
-      const m = e?.message || "创建失败";
-      setErr(m);
-      showToast(m);
+      setErr(e?.message || "创建失败");
     } finally {
       setLoading(false);
     }
@@ -222,22 +204,6 @@ export default function HomePage() {
 
   return (
     <main className="card p-6 space-y-4">
-      {/* Toast：右上角 */}
-      {toast && (
-        <div
-          className={clsx(
-            "fixed right-4 top-4 z-[1000] max-w-[80vw] sm:max-w-sm px-4 py-3 rounded-xl shadow-lg",
-            toast.type === "success"
-              ? "bg-green-500 text-white"
-              : "bg-red-500 text-white"
-          )}
-          role="status"
-          aria-live="polite"
-        >
-          {toast.msg}
-        </div>
-      )}
-
       <form ref={formRef} onSubmit={onSubmit} className="space-y-4">
         <div>
           <label className="label">要分享的文本（可留空仅分享文件）</label>
@@ -257,6 +223,7 @@ export default function HomePage() {
           <input
             type="file"
             multiple
+            // 常见文本类型与扩展名
             accept="text/*,application/json,application/xml,.txt,.md,.markdown,.csv,.tsv,.json,.jsonl,.log,.xml,.yaml,.yml,.ini,.conf,.cfg,.properties,.env,.sh,.bash,.zsh,.bat,.cmd,.ps1,.py,.js,.ts,.tsx,.jsx,.mjs,.cjs,.java,.kt,.go,.rs,.rb,.php,.c,.h,.cpp,.hpp,.cs,.swift,.sql"
             onChange={(e) => onPickFiles(e.currentTarget.files)}
             className="block"
@@ -354,7 +321,7 @@ export default function HomePage() {
           <button className={clsx("btn-primary", loading && "opacity-70")} disabled={loading}>
             {loading ? "创建中…" : "创建分享链接"}
           </button>
-          {/* 不再显示内联错误，统一用 toast */}
+          {err && <span className="text-sm text-red-500">{err}</span>}
         </div>
 
         {link && (
@@ -378,7 +345,6 @@ export default function HomePage() {
                   try {
                     await navigator.clipboard.writeText(link);
                     setCopied(true);
-                    showToast("已复制到剪贴板", "success");
                   } catch {
                     const input = document.createElement("input");
                     input.value = link;
@@ -387,7 +353,6 @@ export default function HomePage() {
                     document.execCommand("copy");
                     document.body.removeChild(input);
                     setCopied(true);
-                    showToast("已复制到剪贴板", "success");
                   }
                 }}
               >
