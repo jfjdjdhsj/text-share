@@ -2,8 +2,16 @@ import crypto from "crypto";
 
 export type ScryptParams = { N: number; r: number; p: number; keylen: number };
 
-// 原本 N=2**15 太大，这里改成 2**13（省 4 倍内存）
-const defaultParams: ScryptParams = { N: 2 ** 13, r: 8, p: 1, keylen: 32 };
+// 在本地/开发环境用较强参数；在无服务器生产用稍低参数（更快，仍安全）
+const isProd = process.env.NODE_ENV === "production";
+
+// 生产：2**12 ；开发：2**14
+const defaultParams: ScryptParams = {
+  N: isProd ? 2 ** 12 : 2 ** 14,
+  r: 8,
+  p: 1,
+  keylen: 32,
+};
 
 export async function hashPassword(plain: string, params: ScryptParams = defaultParams) {
   const salt = crypto.randomBytes(16);
@@ -30,10 +38,13 @@ export async function verifyPassword(
 
 function scryptAsync(password: string, salt: Buffer, params: ScryptParams): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    crypto.scrypt(password, salt, params.keylen, { N: params.N, r: params.r, p: params.p }, (err, key) => {
-      if (err) reject(err);
-      else resolve(key as Buffer);
-    });
+    crypto.scrypt(
+      password,
+      salt,
+      params.keylen,
+      { N: params.N, r: params.r, p: params.p },
+      (err, key) => (err ? reject(err) : resolve(key as Buffer))
+    );
   });
 }
 
