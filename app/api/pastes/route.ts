@@ -41,8 +41,13 @@ export async function POST(req: NextRequest) {
     let pwHash: string | undefined;
     let pwParams: string | undefined;
     if (enablePassword) {
-      if (!password || password.length < 4) {
-        return NextResponse.json({ message: "密码至少 4 位" }, { status: 400 });
+      // Removed the password length check here:
+      // if (!password || password.length < 4) {
+      //   return NextResponse.json({ message: "密码至少 4 位" }, { status: 400 });
+      // }
+      // Ensure password exists if enablePassword is true
+      if (!password) {
+        return NextResponse.json({ message: "请提供密码" }, { status: 400 });
       }
       const hashed = await hashPassword(password);
       pwSalt = hashed.saltB64;
