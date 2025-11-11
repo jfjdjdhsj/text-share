@@ -22,7 +22,12 @@ export async function POST(req: NextRequest) {
   try {
     const json = await req.json();
     const parsed = bodySchema.safeParse(json);
-    if (!parsed.success) return NextResponse.json({ message: parsed.error.issues[0]?.message || "参数不合法" }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { message: parsed.error.issues[0]?.message || "参数不合法" },
+        { status: 400 }
+      );
+    }
 
     const {
       content, enablePassword, password,
@@ -31,27 +36,34 @@ export async function POST(req: NextRequest) {
       fileIds, burnOnce
     } = parsed.data;
 
+    // 密码哈希
     let pwSalt: string | undefined;
     let pwHash: string | undefined;
     let pwParams: string | undefined;
-
     if (enablePassword) {
-      if (!password || password.length < 4) return NextResponse.json({ message: "密码至少 4 位" }, { status: 400 });
+      if (!password || password.length < 4) {
+        return NextResponse.json({ message: "密码至少 4 位" }, { status: 400 });
+      }
       const hashed = await hashPassword(password);
       pwSalt = hashed.saltB64;
       pwHash = hashed.hashB64;
       pwParams = JSON.stringify(hashed.params);
     }
 
+    // ✅ 文本默认 7 天到期（如果没有启用“自定义分钟数”）
+    const now = Date.now();
     const expiresAt =
-      enableExpiry && expiryMinutes ? new Date(Date.now() + expiryMinutes * 60 * 1000) : null;
+      enableExpiry && expiryMinutes
+        ? new Date(now + expiryMinutes * 60 * 1000)
+        : new Date(now + 7 * 24 * 60 * 60 * 1000); // 7 天
+
     const maxViewsFinal = burnOnce ? 1 : (enableMaxViews && maxViews ? maxViews : null);
 
     const rec = await prisma.paste.create({
       data: {
-        content: content ?? "", // 文件分享可为空字符串
+        content: content ?? "",
         pwSalt, pwHash, pwParams,
-        expiresAt: expiresAt ?? undefined,
+        expiresAt, // 始终写入一个过期时间（要么是自定义分钟，要么 7 天）
         maxViews: maxViewsFinal ?? undefined
       },
       select: { id: true }
