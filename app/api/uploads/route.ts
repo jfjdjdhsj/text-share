@@ -1,4 +1,4 @@
-export const runtime = "nodejs"; // 需要 Node 运行时处理 Buffer
+export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { uploadToBlob } from "@/src/lib/blob";
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
           filename: f.name || "file",
           url: putRes.url,
           blobPath: putRes.pathname,
-          size: putRes.size ?? buf.length,
+          size: buf.length,              // ← 这里改成使用本地 Buffer 的长度
           mime: f.type || null,
           expiresAt,
         },
