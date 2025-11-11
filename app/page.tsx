@@ -6,7 +6,7 @@ import clsx from "clsx";
 import { QRCodeSVG } from "qrcode.react";
 
 const MAX_FILES = 10;
-const MAX_TOTAL = 50 * 1024 * 1024;
+const MAX_TOTAL = 10 * 1024 * 1024; // ✅ 10MB
 
 const schema = z
   .object({
@@ -32,8 +32,27 @@ function formatSize(n: number) {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
+// 与后端保持一致的文本类型判断
+const ALLOWED_EXT = new Set([
+  "txt","md","markdown","csv","tsv","json","jsonl","log","xml",
+  "yaml","yml","ini","conf","cfg","properties","env",
+  "sh","bash","zsh","bat","cmd","ps1",
+  "py","js","ts","tsx","jsx","mjs","cjs",
+  "java","kt","go","rs","rb","php",
+  "c","h","cpp","hpp","cs","swift",
+  "sql"
+]);
+function isTextLike(name: string, type?: string) {
+  const t = (type || "").toLowerCase();
+  if (t.startsWith("text/")) return true;
+  if (t === "application/json" || t === "application/xml") return true;
+  const m = name.toLowerCase().match(/\.([a-z0-9]+)$/i);
+  const ext = m ? m[1] : "";
+  return ALLOWED_EXT.has(ext);
+}
+
 export default function HomePage() {
-  const formRef = useRef<HTMLFormElement>(null); // ← 用 ref 持有表单元素
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [link, setLink] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -51,8 +70,21 @@ export default function HomePage() {
 
   function onPickFiles(flist: FileList | null) {
     if (!flist) return;
-    const arr = Array.from(flist);
-    const merged = [...files, ...arr].slice(0, MAX_FILES);
+    const picked = Array.from(flist);
+    // 预检类型
+    for (const f of picked) {
+      if (!isTextLike(f.name, (f as any).type)) {
+        setErr(`仅支持文本文件，已拒绝：${f.name}`);
+        return;
+      }
+    }
+    const merged = [...files, ...picked].slice(0, MAX_FILES);
+    const size = merged.reduce((s, f) => s + (f.size || 0), 0);
+    if (size > MAX_TOTAL) {
+      setErr("文件总大小不能超过 10MB");
+      return;
+    }
+    setErr(null);
     setFiles(merged);
   }
 
@@ -63,7 +95,12 @@ export default function HomePage() {
   async function uploadFiles(): Promise<string[]> {
     if (files.length === 0) return [];
     if (files.length > MAX_FILES) throw new Error(`最多 ${MAX_FILES} 个文件`);
-    if (totalSize > MAX_TOTAL) throw new Error("文件总大小不能超过 50MB");
+    if (totalSize > MAX_TOTAL) throw new Error("文件总大小不能超过 10MB");
+    for (const f of files) {
+      if (!isTextLike(f.name, (f as any).type)) {
+        throw new Error(`仅支持文本文件，已拒绝：${f.name}`);
+      }
+    }
 
     const fd = new FormData();
     for (const f of files) fd.append("files", f);
@@ -80,7 +117,6 @@ export default function HomePage() {
     setLoading(true);
     setLink(null);
 
-    // ⚠️ 千万不要在 await 后再用 e.currentTarget；改用 ref
     const el = formRef.current;
     if (!el) {
       setErr("表单未就绪，请刷新后重试");
@@ -153,8 +189,8 @@ export default function HomePage() {
       const { id } = await res.json();
       const url = `${location.origin}/p/${id}`;
       setLink(url);
-      setFiles([]);          // 清空文件
-      el.reset();            // ✅ 用 ref 安全 reset，不再读取 e.currentTarget
+      setFiles([]);
+      el.reset();
     } catch (e: any) {
       setErr(e?.message || "创建失败");
     } finally {
@@ -177,12 +213,16 @@ export default function HomePage() {
           />
         </div>
 
-        {/* 文件上传 */}
+        {/* 文件上传（仅文本） */}
         <div className="space-y-2">
-          <label className="label">上传文件（最多 10 个，总计 ≤ 50MB；可仅分享文件）</label>
+          <label className="label">
+            上传文件（最多 10 个，总计 ≤ 10MB；<b>仅支持文本文件</b>）
+          </label>
           <input
             type="file"
             multiple
+            // 只开放常见文本类型与扩展名
+            accept="text/*,application/json,application/xml,.txt,.md,.markdown,.csv,.tsv,.json,.jsonl,.log,.xml,.yaml,.yml,.ini,.conf,.cfg,.properties,.env,.sh,.bash,.zsh,.bat,.cmd,.ps1,.py,.js,.ts,.tsx,.jsx,.mjs,.cjs,.java,.kt,.go,.rs,.rb,.php,.c,.h,.cpp,.hpp,.cs,.swift,.sql"
             onChange={(e) => onPickFiles(e.currentTarget.files)}
             className="block"
           />
