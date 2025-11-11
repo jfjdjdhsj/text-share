@@ -11,6 +11,12 @@ type Meta = {
 
 type FileItem = { id: string; filename: string; url: string; size: number };
 
+function formatSize(n: number) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
 export default function PastePage({ params }: { params: { id: string } }) {
   const { id } = params;
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -63,9 +69,11 @@ export default function PastePage({ params }: { params: { id: string } }) {
           <div className="text-sm text-slate-500">
             {meta.remainingViews === null ? "不限制查看次数" : `剩余可查看：${meta.remainingViews} 次`}
           </div>
-          <pre className="whitespace-pre-wrap break-words bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-            {content}
-          </pre>
+          {content.trim().length > 0 && (
+            <pre className="whitespace-pre-wrap break-words bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+              {content}
+            </pre>
+          )}
 
           {files.length > 0 && (
             <div className="space-y-2">
@@ -76,7 +84,7 @@ export default function PastePage({ params }: { params: { id: string } }) {
                     <a className="underline" href={f.url} target="_blank" rel="noreferrer">
                       {f.filename}
                     </a>{" "}
-                    <span className="text-xs text-slate-500">({(f.size/1024/1024).toFixed(2)} MB)</span>
+                    <span className="text-xs text-slate-500">({formatSize(f.size)})</span>
                   </li>
                 ))}
               </ul>
