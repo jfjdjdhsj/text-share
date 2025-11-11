@@ -5,8 +5,12 @@ import { z } from "zod";
 import clsx from "clsx";
 import { QRCodeSVG } from "qrcode.react";
 
+const MAX_FILES = 10;
+const MAX_TOTAL = 50 * 1024 * 1024;
+
 const schema = z.object({
-  content: z.string().min(1, "请输入要分享的文本"),
+  // 这里不再强制 content >= 1；用后面的 refine 做“文本或文件至少一个”
+  content: z.string().default(""),
   enablePassword: z.boolean(),
   password: z.string().optional(),
   enableExpiry: z.boolean(),
@@ -15,10 +19,16 @@ const schema = z.object({
   maxViews: z.number().int().positive().optional(),
   burnOnce: z.boolean(),
   fileIds: z.array(z.string()).max(10).optional()
+}).refine((d) => (d.content?.trim()?.length ?? 0) > 0 || (d.fileIds?.length ?? 0) > 0, {
+  message: "请填写文本或选择至少一个文件",
+  path: ["content"]
 });
 
-const MAX_FILES = 10;
-const MAX_TOTAL = 50 * 1024 * 1024;
+function formatSize(n: number) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
 
 export default function HomePage() {
   const [link, setLink] = useState<string | null>(null);
@@ -37,8 +47,13 @@ export default function HomePage() {
 
   function onPickFiles(flist: FileList | null) {
     if (!flist) return;
-    const arr = Array.from(flist).slice(0, MAX_FILES);
-    setFiles(arr);
+    const arr = Array.from(flist);
+    const merged = [...files, ...arr].slice(0, MAX_FILES);
+    setFiles(merged);
+  }
+
+  function removeFileAt(idx: number) {
+    setFiles((fs) => fs.filter((_, i) => i !== idx));
   }
 
   async function uploadFiles(): Promise<string[]> {
@@ -78,7 +93,6 @@ export default function HomePage() {
     const maxViews = burnOnce ? 1 : enableMaxViews ? Number(form.get("maxViews") || 0) || undefined : undefined;
 
     try {
-      // 先上传文件，拿到 fileIds
       const fileIds = await uploadFiles();
 
       const payload = {
@@ -96,11 +110,7 @@ export default function HomePage() {
       const parsed = schema.safeParse(payload);
       if (!parsed.success) {
         const first = parsed.error.issues[0];
-        const msg =
-          first?.path?.[0] === "expiryMinutes" || first?.path?.[0] === "maxViews"
-            ? "请填写一个大于 0 的整数"
-            : first?.message || "表单不合法";
-        throw new Error(msg);
+        throw new Error(first?.message || "请填写文本或选择至少一个文件");
       }
 
       const res = await fetch("/api/pastes", {
@@ -121,7 +131,8 @@ export default function HomePage() {
       const { id } = await res.json();
       const url = `${location.origin}/p/${id}`;
       setLink(url);
-      setFiles([]);
+      setFiles([]); // 清空已选择文件
+      (e.currentTarget as HTMLFormElement).reset(); // 清表单
     } catch (e: any) {
       setErr(e?.message || "创建失败");
     } finally {
@@ -135,21 +146,32 @@ export default function HomePage() {
     <main className="card p-6 space-y-4">
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
-          <label className="label">要分享的文本</label>
-          <textarea name="content" rows={8} className="textarea" placeholder="在这里粘贴文本…" required />
+          <label className="label">要分享的文本（可留空仅分享文件）</label>
+          <textarea name="content" rows={8} className="textarea" placeholder="在这里粘贴文本…" />
         </div>
 
         {/* 文件上传 */}
         <div className="space-y-2">
-          <label className="label">上传文件（最多 10 个，总计 ≤ 50MB）</label>
+          <label className="label">上传文件（最多 10 个，总计 ≤ 50MB；可仅分享文件）</label>
           <input type="file" multiple onChange={(e) => onPickFiles(e.currentTarget.files)} className="block" />
           <div className="note">
-            已选 {files.length} 个文件，合计 {(totalSize / (1024 * 1024)).toFixed(2)} MB
+            已选 {files.length} 个文件，合计 {formatSize(totalSize)}
           </div>
           {files.length > 0 && (
-            <ul className="text-sm list-disc pl-5">
+            <ul className="text-sm list-disc pl-5 space-y-1">
               {files.map((f, i) => (
-                <li key={i}>{f.name}（{(f.size / (1024 * 1024)).toFixed(2)} MB）</li>
+                <li key={i} className="break-all flex items-center gap-2">
+                  <span>{f.name}</span>
+                  <span className="text-xs text-slate-500">（{formatSize(f.size)}）</span>
+                  <button
+                    type="button"
+                    className="ml-2 text-xs underline text-red-600 hover:opacity-80"
+                    onClick={() => removeFileAt(i)}
+                    aria-label={`删除 ${f.name}`}
+                  >
+                    删除
+                  </button>
+                </li>
               ))}
             </ul>
           )}
