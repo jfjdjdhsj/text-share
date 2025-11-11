@@ -14,7 +14,11 @@ const schema = z.object({
   enableMaxViews: z.boolean(),
   maxViews: z.number().int().positive().optional(),
   burnOnce: z.boolean(),
+  fileIds: z.array(z.string()).max(10).optional()
 });
+
+const MAX_FILES = 10;
+const MAX_TOTAL = 50 * 1024 * 1024;
 
 export default function HomePage() {
   const [link, setLink] = useState<string | null>(null);
@@ -22,11 +26,34 @@ export default function HomePage() {
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const [files, setFiles] = useState<File[]>([]);
+  const totalSize = files.reduce((s, f) => s + (f.size || 0), 0);
+
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(false), 1200);
     return () => clearTimeout(t);
   }, [copied]);
+
+  function onPickFiles(flist: FileList | null) {
+    if (!flist) return;
+    const arr = Array.from(flist).slice(0, MAX_FILES);
+    setFiles(arr);
+  }
+
+  async function uploadFiles(): Promise<string[]> {
+    if (files.length === 0) return [];
+    if (files.length > MAX_FILES) throw new Error(`最多 ${MAX_FILES} 个文件`);
+    if (totalSize > MAX_TOTAL) throw new Error("文件总大小不能超过 50MB");
+
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f);
+
+    const res = await fetch("/api/uploads", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.message || "文件上传失败");
+    return (data.uploads as Array<{ id: string }>).map((u) => u.id);
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -41,62 +68,52 @@ export default function HomePage() {
     const burnOnce = form.get("burnOnce") === "on";
     const password = enablePassword ? String(form.get("password") || "") : "";
 
-    // 额外的前端校验：密码至少 4 位
     if (enablePassword && password.length < 4) {
       setErr("密码至少 4 位");
       setLoading(false);
       return;
     }
 
-    // 未勾选则不传数字，避免 “Number must be greater than 0”
-    const expiryMinutes =
-      enableExpiry ? Number(form.get("expiryMinutes") || 0) || undefined : undefined;
-
-    // burnOnce 优先：仅可查看 1 次
-    const maxViews =
-      burnOnce ? 1 : enableMaxViews ? Number(form.get("maxViews") || 0) || undefined : undefined;
-
-    const payload = {
-      content: String(form.get("content") || ""),
-      enablePassword,
-      password: enablePassword ? password : undefined,
-      enableExpiry,
-      expiryMinutes,
-      enableMaxViews: burnOnce ? true : enableMaxViews,
-      maxViews,
-      burnOnce,
-    };
-
-    const parsed = schema.safeParse(payload);
-    if (!parsed.success) {
-      const first = parsed.error.issues[0];
-      const msg =
-        first?.path?.[0] === "expiryMinutes" || first?.path?.[0] === "maxViews"
-          ? "请填写一个大于 0 的整数"
-          : first?.message || "表单不合法";
-      setErr(msg);
-      setLoading(false);
-      return;
-    }
+    const expiryMinutes = enableExpiry ? Number(form.get("expiryMinutes") || 0) || undefined : undefined;
+    const maxViews = burnOnce ? 1 : enableMaxViews ? Number(form.get("maxViews") || 0) || undefined : undefined;
 
     try {
+      // 先上传文件，拿到 fileIds
+      const fileIds = await uploadFiles();
+
+      const payload = {
+        content: String(form.get("content") || ""),
+        enablePassword,
+        password: enablePassword ? password : undefined,
+        enableExpiry,
+        expiryMinutes,
+        enableMaxViews: burnOnce ? true : enableMaxViews,
+        maxViews,
+        burnOnce,
+        fileIds
+      };
+
+      const parsed = schema.safeParse(payload);
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        const msg =
+          first?.path?.[0] === "expiryMinutes" || first?.path?.[0] === "maxViews"
+            ? "请填写一个大于 0 的整数"
+            : first?.message || "表单不合法";
+        throw new Error(msg);
+      }
+
       const res = await fetch("/api/pastes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed.data),
+        body: JSON.stringify(parsed.data)
       });
 
       if (!res.ok) {
-        // 尝试展示后端给的具体错误信息
         let message = "创建失败";
         try {
           const text = await res.text();
-          try {
-            const j = JSON.parse(text);
-            message = j?.message || message;
-          } catch {
-            message = text || message;
-          }
+          try { message = JSON.parse(text)?.message || message; } catch { message = text || message; }
         } catch {}
         throw new Error(message);
       }
@@ -104,6 +121,7 @@ export default function HomePage() {
       const { id } = await res.json();
       const url = `${location.origin}/p/${id}`;
       setLink(url);
+      setFiles([]);
     } catch (e: any) {
       setErr(e?.message || "创建失败");
     } finally {
@@ -121,6 +139,22 @@ export default function HomePage() {
           <textarea name="content" rows={8} className="textarea" placeholder="在这里粘贴文本…" required />
         </div>
 
+        {/* 文件上传 */}
+        <div className="space-y-2">
+          <label className="label">上传文件（最多 10 个，总计 ≤ 50MB）</label>
+          <input type="file" multiple onChange={(e) => onPickFiles(e.currentTarget.files)} className="block" />
+          <div className="note">
+            已选 {files.length} 个文件，合计 {(totalSize / (1024 * 1024)).toFixed(2)} MB
+          </div>
+          {files.length > 0 && (
+            <ul className="text-sm list-disc pl-5">
+              {files.map((f, i) => (
+                <li key={i}>{f.name}（{(f.size / (1024 * 1024)).toFixed(2)} MB）</li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         <div className="row">
           <div className="space-y-2">
             <label className="label flex items-center gap-2">
@@ -128,7 +162,7 @@ export default function HomePage() {
               启用密码
             </label>
             <input name="password" type="password" className="input" placeholder="设置访问密码（可选）" />
-            <p className="note">密码将使用 <code>scrypt</code> 强哈希，服务器仅保存哈希值，无法反推明文。</p>
+            <p className="note">密码将使用 <code>scrypt</code> 强哈希，服务器仅保存哈希值。</p>
           </div>
 
           <div className="space-y-2">
@@ -171,24 +205,17 @@ export default function HomePage() {
           <div className="mt-4 p-4 rounded-xl bg-slate-100 dark:bg-slate-800 space-y-3">
             <div className="text-sm text-slate-600 dark:text-slate-300">分享链接：</div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <a className="font-mono break-all underline" href={link} target="_blank" rel="noreferrer">
-                {link}
-              </a>
+              <a className="font-mono break-all underline" href={link} target="_blank" rel="noreferrer">{link}</a>
               <button
                 type="button"
                 className="btn-primary"
                 onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(link);
-                    setCopied(true);
-                  } catch {
+                  try { await navigator.clipboard.writeText(link); setCopied(true); }
+                  catch {
                     const input = document.createElement("input");
-                    input.value = link;
-                    document.body.appendChild(input);
-                    input.select();
-                    document.execCommand("copy");
-                    document.body.removeChild(input);
-                    setCopied(true);
+                    input.value = link; document.body.appendChild(input);
+                    input.select(); document.execCommand("copy");
+                    document.body.removeChild(input); setCopied(true);
                   }
                 }}
               >
