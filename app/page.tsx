@@ -22,7 +22,6 @@ export default function HomePage() {
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // 复制按钮反馈消失
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(false), 1200);
@@ -40,19 +39,27 @@ export default function HomePage() {
     const enableExpiry = form.get("enableExpiry") === "on";
     const enableMaxViews = form.get("enableMaxViews") === "on";
     const burnOnce = form.get("burnOnce") === "on";
+    const password = enablePassword ? String(form.get("password") || "") : "";
 
-    // 关键点：未勾选则传 undefined（而不是 0），避免 “Number must be greater than 0”
+    // 额外的前端校验：密码至少 4 位
+    if (enablePassword && password.length < 4) {
+      setErr("密码至少 4 位");
+      setLoading(false);
+      return;
+    }
+
+    // 未勾选则不传数字，避免 “Number must be greater than 0”
     const expiryMinutes =
       enableExpiry ? Number(form.get("expiryMinutes") || 0) || undefined : undefined;
 
-    // burnOnce 优先：将 maxViews 视为 1，并认为已启用次数限制
+    // burnOnce 优先：仅可查看 1 次
     const maxViews =
       burnOnce ? 1 : enableMaxViews ? Number(form.get("maxViews") || 0) || undefined : undefined;
 
     const payload = {
       content: String(form.get("content") || ""),
       enablePassword,
-      password: enablePassword ? String(form.get("password") || "") : undefined,
+      password: enablePassword ? password : undefined,
       enableExpiry,
       expiryMinutes,
       enableMaxViews: burnOnce ? true : enableMaxViews,
@@ -62,7 +69,6 @@ export default function HomePage() {
 
     const parsed = schema.safeParse(payload);
     if (!parsed.success) {
-      // 尝试给更友好的报错
       const first = parsed.error.issues[0];
       const msg =
         first?.path?.[0] === "expiryMinutes" || first?.path?.[0] === "maxViews"
@@ -79,7 +85,22 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(parsed.data),
       });
-      if (!res.ok) throw new Error(await res.text());
+
+      if (!res.ok) {
+        // 尝试展示后端给的具体错误信息
+        let message = "创建失败";
+        try {
+          const text = await res.text();
+          try {
+            const j = JSON.parse(text);
+            message = j?.message || message;
+          } catch {
+            message = text || message;
+          }
+        } catch {}
+        throw new Error(message);
+      }
+
       const { id } = await res.json();
       const url = `${location.origin}/p/${id}`;
       setLink(url);
@@ -161,7 +182,6 @@ export default function HomePage() {
                     await navigator.clipboard.writeText(link);
                     setCopied(true);
                   } catch {
-                    // 兼容部分浏览器的限制
                     const input = document.createElement("input");
                     input.value = link;
                     document.body.appendChild(input);
