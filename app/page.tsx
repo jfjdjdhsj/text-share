@@ -133,7 +133,7 @@ export default function HomePage() {
     const burnOnce = form.get("burnOnce") === "on";
     const password = enablePassword ? String(form.get("password") || "") : "";
 
-    if (enablePassword && password.length < 4) {
+    if (enablePassword && password.length < 0) {
       setErr("密码至少 4 位");
       setLoading(false);
       return;
