@@ -14,4 +14,4 @@ BLOB_READ_WRITE_TOKEN
 
 例如 vercel_blob_rw_i2SiMkkxmGwbv4Nt_tymi1WNS1KBavcOwa0HEws4234566
 
-填入不要太""
+填入不要带""
