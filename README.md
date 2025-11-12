@@ -22,8 +22,7 @@
 ### 方式一：Vercel 部署
 
 #### 第一步：Fork 项目
-1. 打开本仓库，点击 **Fork** 到你自己的 GitHub 账号（保留 `main` 分支）。
-2. （可选）在 `public/` 放置站点图标 `logo.png`，用于标签页 favicon 与页头 Logo。
+1. 打开本仓库，点击 **Fork** 到你自己的 GitHub 账号
 
 #### 第二步：导入到 Vercel 并首次部署
 1. 登录 [Vercel](https://vercel.com/) → 点击 **New Project** → **Import Git Repository**。
