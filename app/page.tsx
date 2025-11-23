@@ -289,7 +289,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="row">
+        <div className="row md:items-center">
           <div className="space-y-2">
             <label className="label flex items-center gap-2">
               <input
