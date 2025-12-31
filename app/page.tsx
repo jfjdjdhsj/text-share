@@ -75,7 +75,7 @@ export default function HomePage() {
     // 预检：仅文本文件
     for (const f of picked) {
       if (!isTextLike(f.name, (f as any).type)) {
-        setErr("仅支持文本文件")上传文件可能有bug推荐文本;
+        setErr("仅支持文本文件，上传文件可能有bug推荐文本");
         return;
       }
     }
