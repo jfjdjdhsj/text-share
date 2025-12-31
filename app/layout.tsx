@@ -37,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               rel="noopener noreferrer"
               className="underline hover:text-slate-700 dark:hover:text-slate-300 transition"
             >
-              TextShare
+              开源地址
             </a>
           </footer>
         </div>
