@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
 
           <footer className="mt-12 text-center text-sm text-slate-500">
-            © {new Date().getFullYear()}{" "}
+            © 2026{" "}
             <a
               href="https://github.com/jfjdjdhsj/text-share"
               target="_blank"
